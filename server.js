@@ -49,35 +49,37 @@ async function connectDB() {
 
 connectDB();
 
-// --- УЛУЧШЕННЫЙ МЕХАНИЗМ KEEP-ALIVE ---
-const keepAlive = () => {
-  // На Render есть стандартная переменная RENDER_EXTERNAL_URL
+// --- СТАБИЛЬНЫЙ МЕХАНИЗМ KEEP-ALIVE ---
+const startKeepAlive = () => {
   const url = process.env.RENDER_EXTERNAL_URL || (process.env.RENDER_EXTERNAL_HOSTNAME ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}.onrender.com` : null);
   
-  if (url) {
-    const healthUrl = `${url}/api/health`;
-    console.log(`[Keep-Alive] Initializing with URL: ${healthUrl}`);
+  if (!url) {
+    console.warn("[Keep-Alive] No external URL found for pinging.");
+    return;
+  }
+
+  const healthUrl = `${url.replace(/\/$/, '')}/api/health`;
+  console.log(`[Keep-Alive] Service scheduled for: ${healthUrl}`);
+  
+  setTimeout(() => {
+    console.log("[Keep-Alive] Initializing periodic pings...");
     
-    // Пингуем чаще (раз в 5 минут), чтобы Render не успевал "заснуть"
     setInterval(async () => {
       try {
         const res = await fetch(healthUrl);
         if (res.ok) {
-          console.log(`[Keep-Alive] Ping success: ${new Date().toLocaleTimeString()}`);
+          console.log(`[Keep-Alive] Heartbeat OK at ${new Date().toLocaleTimeString()}`);
         } else {
-          console.warn(`[Keep-Alive] Ping returned status ${res.status}`);
+          console.warn(`[Keep-Alive] Heartbeat status: ${res.status}`);
         }
       } catch (err) {
-        // Ошибка fetch failed часто бывает при временных сбоях сети самого хостинга
-        console.error('[Keep-Alive] Ping failed (network error):', err.message);
+        console.log(`[Keep-Alive] Network skip (likely internal Render routing): ${err.message}`);
       }
-    }, 5 * 60 * 1000); 
-  } else {
-    console.warn("[Keep-Alive] No external URL found for pinging.");
-  }
+    }, 4 * 60 * 1000); 
+  }, 30000);
 };
 
-keepAlive();
+startKeepAlive();
 
 app.use(cors());
 app.use(bodyParser.json());
@@ -91,7 +93,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.post('/api/ai-advice', async (req, res) => {
-  const { weight, age, consumed, norm } = req.body;
+  const { weight, age, consumed, norm, currentTime, mealsCount } = req.body;
   
   if (!process.env.API_KEY) {
     return res.json({ advice: "Добавьте API_KEY в Render Settings." });
@@ -100,12 +102,25 @@ app.post('/api/ai-advice', async (req, res) => {
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Котенку ${age.toFixed(1)} месяцев, вес ${weight.toFixed(2)}кг. Сегодня съел ${consumed.toFixed(0)}г при норме ${norm.toFixed(0)}г. 
-      Дай ОДИН очень короткий (до 15 слов) заботливый совет на русском языке. Используй имя котенка Оззи.`,
+      contents: `
+        ИНФОРМАЦИЯ:
+        Котёнок: Оззи
+        Возраст: ${age.toFixed(1)} мес
+        Вес: ${weight.toFixed(2)} кг
+        Сейчас времени: ${currentTime}
+        Съел за сегодня: ${consumed.toFixed(0)}г (из ${norm.toFixed(0)}г нормы)
+        Количество приемов пищи: ${mealsCount}
+
+        ЗАДАЧА:
+        Дай ОДИН очень короткий (до 15 слов) заботливый совет на русском языке.
+        ВАЖНО: Учитывай текущее время. Если сейчас день или вечер (например, 17:40), НЕ ГОВОРИ "не переживай о норме" — это глупо, так как котенок еще поест. 
+        Если съел мало для данного времени, подбодри. Если съел много — предупреди. Если норма почти достигнута, похвали.
+        Будь естественным, как член семьи.
+      `,
     });
     res.json({ advice: response.text });
   } catch (error) {
-    res.json({ advice: "Оззи сегодня просто милашка!" });
+    res.json({ advice: "Оззи сегодня просто лапочка!" });
   }
 });
 
@@ -157,5 +172,5 @@ app.get('*', (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`🚀 Server running on port ${port}`);
+  console.log(`🚀 Ozzy Tracker server active on port ${port}`);
 });

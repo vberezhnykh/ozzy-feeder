@@ -90,11 +90,11 @@ const App: React.FC = () => {
 
   const todayStr = useMemo(() => new Date().toDateString(), []);
 
-  // Обновляем "текущий момент" каждую минуту для плавности таймера
+  // Обновляем "текущий момент" каждые 30 секунд
   useEffect(() => {
     const timer = setInterval(() => {
       setNowTick(Date.now());
-    }, 60000);
+    }, 30000);
     return () => clearInterval(timer);
   }, []);
 
@@ -117,21 +117,25 @@ const App: React.FC = () => {
 
   const consumedToday = useMemo(() => todayHistory.reduce((acc, log) => acc + log.equivalentGrams, 0), [todayHistory]);
 
-  const lastFeedingTimestamp = useMemo(() => {
+  const lastFeedingEver = useMemo(() => {
+    return state.history.length > 0 ? state.history[0].timestamp : null;
+  }, [state.history]);
+
+  const lastFeedingToday = useMemo(() => {
     if (todayHistory.length === 0) return null;
     return todayHistory[todayHistory.length - 1].timestamp;
   }, [todayHistory]);
 
   const timeSinceLastFeedingStr = useMemo(() => {
-    if (!lastFeedingTimestamp) return 'Еще не ел сегодня';
-    return getIntervalText(nowTick, lastFeedingTimestamp);
-  }, [lastFeedingTimestamp, nowTick]);
+    if (!lastFeedingToday) return 'Еще не ел сегодня';
+    return getIntervalText(nowTick, lastFeedingToday);
+  }, [lastFeedingToday, nowTick]);
 
-  // Проверка, не пора ли кушать (более 5 часов)
   const isHungry = useMemo(() => {
-    if (!lastFeedingTimestamp) return false;
-    return (nowTick - lastFeedingTimestamp) > (5 * 60 * 60 * 1000);
-  }, [lastFeedingTimestamp, nowTick]);
+    if (!lastFeedingEver) return false;
+    const hoursSinceLastMeal = (nowTick - lastFeedingEver) / (1000 * 60 * 60);
+    return hoursSinceLastMeal > 5.5;
+  }, [lastFeedingEver, nowTick]);
 
   const checkHealth = async () => {
     try {
@@ -154,7 +158,9 @@ const App: React.FC = () => {
           weight: currentWeight,
           age: currentAge,
           consumed: consumedToday,
-          norm: dailyNorm
+          norm: dailyNorm,
+          currentTime: new Date(nowTick).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+          mealsCount: todayHistory.length
         })
       });
       if (res.ok) {
@@ -220,7 +226,7 @@ const App: React.FC = () => {
     setState(newState);
     localStorage.setItem('kitten_state_bot', JSON.stringify(newState));
     pushData(newState);
-    setNowTick(Date.now()); // Сразу обновляем время после действия
+    setNowTick(Date.now());
   };
 
   const addFeeding = () => {
@@ -363,8 +369,7 @@ const App: React.FC = () => {
       </div>
 
       <div className="tg-card space-y-3 shadow-sm relative overflow-hidden">
-        {/* Индикатор голода (фоновая заливка) */}
-        {isHungry && <div className="absolute top-0 right-0 w-24 h-24 bg-orange-500/5 -rotate-45 translate-x-12 -translate-y-12 pointer-events-none" />}
+        {isHungry && <div className="absolute top-0 right-0 w-24 h-24 bg-orange-500/10 -rotate-45 translate-x-12 -translate-y-12 pointer-events-none" />}
 
         <div className="flex justify-between items-start relative z-10">
           <div className="flex flex-col">
@@ -372,8 +377,14 @@ const App: React.FC = () => {
             <span className="text-xl font-black">{consumedToday.toFixed(0)}г <span className="text-xs text-[var(--tg-theme-hint-color)] font-normal">/ {dailyNorm.toFixed(0)}г</span></span>
           </div>
           <div className="flex flex-col items-end">
-            <span className="text-[var(--tg-theme-hint-color)] text-[10px] uppercase font-bold mb-1">С последней еды</span>
-            <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-colors duration-500 ${isHungry ? 'bg-orange-100 text-orange-700' : 'bg-blue-50 text-blue-700'}`}>
+            <span className="text-[var(--tg-theme-hint-color)] text-[10px] uppercase font-bold mb-1">
+              {isHungry ? (
+                <span className="flex items-center gap-1 text-orange-600 animate-pulse">
+                  <AlertCircle size={10} /> Оззи проголодался!
+                </span>
+              ) : 'С последней еды'}
+            </span>
+            <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all duration-500 ${isHungry ? 'bg-orange-500 text-white shadow-lg shadow-orange-200 scale-105' : 'bg-blue-50 text-blue-700'}`}>
                <Timer size={16} className={`${isHungry ? 'animate-pulse' : ''}`} />
                <span className="text-sm font-black whitespace-nowrap">
                  {timeSinceLastFeedingStr}
