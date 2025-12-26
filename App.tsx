@@ -11,6 +11,7 @@ import {
   BIRTH_DATE, 
   FOOD_LABELS,
   POUCH_DRY_EQUIVALENT,
+  PATE_DRY_EQUIVALENT_RATIO,
   DEFAULT_FAMILY_ID
 } from './constants';
 import { 
@@ -174,11 +175,18 @@ const App: React.FC = () => {
   const addFeeding = () => {
     let val: number, equiv: number;
     if (selectedFood === FoodType.POUCH) {
-      val = 1; equiv = POUCH_DRY_EQUIVALENT;
+      val = 1; 
+      equiv = POUCH_DRY_EQUIVALENT;
     } else {
       val = parseFloat(amount);
       if (isNaN(val) || val <= 0) return;
-      equiv = val;
+      
+      // Расчет эквивалента в зависимости от типа корма
+      if (selectedFood === FoodType.PATE) {
+        equiv = val * PATE_DRY_EQUIVALENT_RATIO;
+      } else {
+        equiv = val; // Сухой корм принимается за 1:1
+      }
     }
 
     const newLog: FeedingLog = {
