@@ -35,7 +35,9 @@ import {
   CheckCircle2,
   AlertCircle,
   Sparkles,
-  Zap
+  Zap,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 const INITIAL_STATE: KittenState = {
@@ -50,6 +52,7 @@ const App: React.FC = () => {
   const [dbConnected, setDbConnected] = useState<boolean | null>(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [aiAdvice, setAiAdvice] = useState<string>('');
+  const [showAllHistory, setShowAllHistory] = useState(false);
   
   const [state, setState] = useState<KittenState>(() => {
     const saved = localStorage.getItem('kitten_state_bot');
@@ -74,10 +77,22 @@ const App: React.FC = () => {
   const dailyNorm = useMemo(() => getDailyNorm(currentWeight, currentAge), [currentWeight, currentAge]);
   const weightGained = useMemo(() => (currentWeight - state.lastManualWeight) * 1000, [currentWeight, state.lastManualWeight]);
 
-  const todayHistory = useMemo(() => {
-    const todayStr = new Date().toDateString();
-    return state.history.filter(log => new Date(log.timestamp).toDateString() === todayStr);
+  const todayStr = useMemo(() => new Date().toDateString(), []);
+
+  // Группировка истории по дням
+  const groupedHistory = useMemo(() => {
+    const groups: Record<string, FeedingLog[]> = {};
+    state.history.forEach(log => {
+      const dateKey = new Date(log.timestamp).toDateString();
+      if (!groups[dateKey]) groups[dateKey] = [];
+      groups[dateKey].push(log);
+    });
+    return Object.entries(groups).sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime());
   }, [state.history]);
+
+  const todayHistory = useMemo(() => {
+    return state.history.filter(log => new Date(log.timestamp).toDateString() === todayStr);
+  }, [state.history, todayStr]);
 
   const consumedToday = useMemo(() => todayHistory.reduce((acc, log) => acc + log.equivalentGrams, 0), [todayHistory]);
 
@@ -181,11 +196,10 @@ const App: React.FC = () => {
       val = parseFloat(amount);
       if (isNaN(val) || val <= 0) return;
       
-      // Расчет эквивалента в зависимости от типа корма
       if (selectedFood === FoodType.PATE) {
         equiv = val * PATE_DRY_EQUIVALENT_RATIO;
       } else {
-        equiv = val; // Сухой корм принимается за 1:1
+        equiv = val;
       }
     }
 
@@ -210,6 +224,21 @@ const App: React.FC = () => {
     setNewWeight('');
     setShowWeightModal(false);
     setTimeout(fetchAiAdvice, 1000);
+  };
+
+  const deleteFeeding = (id: string) => {
+    updateStateAndSync({...state, history: state.history.filter(l => l.id !== id)});
+    (window as any).Telegram?.WebApp?.HapticFeedback?.impactOccurred('medium');
+  };
+
+  const formatDateLabel = (dateKey: string) => {
+    const d = new Date(dateKey);
+    if (dateKey === todayStr) return 'Сегодня';
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (dateKey === yesterday.toDateString()) return 'Вчера';
+    
+    return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
   };
 
   return (
@@ -300,24 +329,54 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {/* History */}
-      <div className="px-4 mt-6 mb-2 text-[var(--tg-theme-hint-color)] text-[11px] uppercase font-bold ml-2">История за сегодня</div>
-      <div className="tg-card !mt-0 p-0 overflow-hidden divide-y divide-[var(--tg-theme-secondary-bg-color)] shadow-sm">
-        {todayHistory.length === 0 ? <div className="p-10 text-center text-[var(--tg-theme-hint-color)] text-sm italic">Пока пусто</div> : todayHistory.map((log) => (
-          <div key={log.id} className="flex items-center justify-between p-4 bg-[var(--tg-theme-bg-color)]">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-[var(--tg-theme-secondary-bg-color)] flex items-center justify-center text-[var(--tg-theme-link-color)]"><Utensils size={18} /></div>
-              <div>
-                <p className="text-sm font-bold">{FOOD_LABELS[log.type]}</p>
-                <p className="text-[10px] text-[var(--tg-theme-hint-color)] font-medium uppercase tracking-tighter">{formatTime(log.timestamp)} • {log.type === FoodType.POUCH ? '1 шт' : `${log.amount}г`}</p>
+      {/* History Section */}
+      <div className="px-4 mt-6 mb-2 flex justify-between items-center">
+        <span className="text-[var(--tg-theme-hint-color)] text-[11px] uppercase font-bold ml-2">История кормлений</span>
+        {groupedHistory.length > 1 && (
+          <button 
+            onClick={() => setShowAllHistory(!showAllHistory)}
+            className="text-[var(--tg-theme-link-color)] text-[11px] font-bold flex items-center gap-1 bg-blue-50 px-2 py-1 rounded-full active:opacity-60 transition-opacity"
+          >
+            {showAllHistory ? 'Скрыть прошлые' : 'Показать всё'} 
+            {showAllHistory ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          </button>
+        )}
+      </div>
+
+      <div className="space-y-4 px-4">
+        {groupedHistory.length === 0 ? (
+          <div className="tg-card !m-0 p-10 text-center text-[var(--tg-theme-hint-color)] text-sm italic shadow-sm">Пока пусто</div>
+        ) : (
+          groupedHistory.slice(0, showAllHistory ? undefined : 1).map(([dateKey, logs]) => (
+            <div key={dateKey} className="animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="flex items-center gap-2 mb-2 ml-2">
+                <Calendar size={10} className="text-[var(--tg-theme-hint-color)]" />
+                <span className="text-[10px] text-[var(--tg-theme-hint-color)] font-bold uppercase tracking-wider">{formatDateLabel(dateKey)}</span>
+              </div>
+              <div className="tg-card !m-0 p-0 overflow-hidden divide-y divide-[var(--tg-theme-secondary-bg-color)] shadow-sm">
+                {logs.map((log) => (
+                  <div key={log.id} className="flex items-center justify-between p-4 bg-[var(--tg-theme-bg-color)]">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-[var(--tg-theme-secondary-bg-color)] flex items-center justify-center text-[var(--tg-theme-link-color)]"><Utensils size={18} /></div>
+                      <div>
+                        <p className="text-sm font-bold">{FOOD_LABELS[log.type]}</p>
+                        <p className="text-[10px] text-[var(--tg-theme-hint-color)] font-medium uppercase tracking-tighter">
+                          {formatTime(log.timestamp)} • {log.type === FoodType.POUCH ? '1 шт' : `${log.amount}г`}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="font-bold text-sm">+{log.equivalentGrams.toFixed(0)}г</span>
+                      {dateKey === todayStr && (
+                        <button onClick={() => deleteFeeding(log.id)} className="text-red-400 p-2 active:bg-red-50 rounded-full transition-colors"><Trash2 size={16} /></button>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-            <div className="flex items-center gap-4">
-              <span className="font-bold text-sm">+{log.equivalentGrams.toFixed(0)}г</span>
-              <button onClick={() => updateStateAndSync({...state, history: state.history.filter(l => l.id !== log.id)})} className="text-red-400 p-2 active:bg-red-50 rounded-full transition-colors"><Trash2 size={16} /></button>
-            </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
       {/* Status/Settings Modal */}
