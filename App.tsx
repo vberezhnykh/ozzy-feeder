@@ -79,7 +79,6 @@ const App: React.FC = () => {
 
   const todayStr = useMemo(() => new Date().toDateString(), []);
 
-  // Группировка истории по дням
   const groupedHistory = useMemo(() => {
     const groups: Record<string, FeedingLog[]> = {};
     state.history.forEach(log => {
@@ -99,8 +98,10 @@ const App: React.FC = () => {
   const checkHealth = async () => {
     try {
       const res = await fetch('/api/health');
-      const data = await res.json();
-      setDbConnected(data.dbConnected);
+      if (res.ok) {
+        const data = await res.json();
+        setDbConnected(data.dbConnected);
+      }
     } catch (e) {
       setDbConnected(false);
     }
@@ -118,8 +119,10 @@ const App: React.FC = () => {
           norm: dailyNorm
         })
       });
-      const data = await res.json();
-      setAiAdvice(data.advice);
+      if (res.ok) {
+        const data = await res.json();
+        setAiAdvice(data.advice);
+      }
     } catch (e) {
       console.error(e);
     }
@@ -129,8 +132,15 @@ const App: React.FC = () => {
     try {
       setSyncStatus('syncing');
       const res = await fetch(`/api/state/${DEFAULT_FAMILY_ID}`);
-      const remoteState = await res.json();
+      if (!res.ok) throw new Error('Fetch failed');
       
+      const text = await res.text();
+      if (!text || text === 'null') {
+        setSyncStatus('synced');
+        return;
+      }
+      
+      const remoteState = JSON.parse(text);
       if (remoteState) {
         setState(remoteState);
         localStorage.setItem('kitten_state_bot', JSON.stringify(remoteState));
@@ -145,12 +155,13 @@ const App: React.FC = () => {
   const pushData = async (currentState: KittenState) => {
     try {
       setSyncStatus('syncing');
-      await fetch(`/api/state/${DEFAULT_FAMILY_ID}`, {
+      const res = await fetch(`/api/state/${DEFAULT_FAMILY_ID}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(currentState)
       });
-      setSyncStatus('synced');
+      if (res.ok) setSyncStatus('synced');
+      else setSyncStatus('error');
     } catch (e) {
       setSyncStatus('error');
     }
@@ -243,7 +254,6 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col min-h-screen max-w-xl mx-auto pb-10">
-      {/* Header */}
       <div className="px-4 py-3 flex justify-between items-center bg-[var(--tg-theme-secondary-bg-color)]">
          <div className="flex flex-col">
             <span className="text-[var(--tg-theme-hint-color)] text-[10px] uppercase font-bold tracking-wider leading-none mb-1">Оззи Трекер</span>
@@ -262,7 +272,6 @@ const App: React.FC = () => {
          </div>
       </div>
 
-      {/* Stats Cards */}
       <div className="tg-card !mt-0 !mb-2 flex justify-between gap-4 shadow-sm">
           <div className="flex-1">
             <p className="text-[var(--tg-theme-hint-color)] text-[10px] mb-1">Возраст</p>
@@ -284,7 +293,6 @@ const App: React.FC = () => {
           </div>
       </div>
 
-      {/* Progress Bar */}
       <div className="tg-card space-y-3 shadow-sm relative overflow-hidden">
         <div className="flex justify-between items-end">
           <span className="text-sm font-bold">Прогресс дня</span>
@@ -298,7 +306,6 @@ const App: React.FC = () => {
           <span>{mealsLeftToday > 0 ? `Порция: ~${nextMealAmount}г` : 'Норма выполнена!'}</span>
         </div>
 
-        {/* AI Advice Section */}
         {aiAdvice && (
           <div className="mt-4 p-3 bg-blue-50/50 rounded-xl border border-blue-100 flex items-start gap-2 animate-in fade-in slide-in-from-bottom-2 duration-500">
              <Sparkles className="text-blue-400 shrink-0 mt-0.5" size={14} />
@@ -307,7 +314,6 @@ const App: React.FC = () => {
         )}
       </div>
 
-      {/* Add Feeding */}
       <div className="px-4 mt-4 mb-2">
         <span className="text-[var(--tg-theme-hint-color)] text-[11px] uppercase font-bold ml-2">Добавить кормление</span>
       </div>
@@ -319,17 +325,16 @@ const App: React.FC = () => {
             </button>
           ))}
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-stretch">
           {selectedFood === FoodType.POUCH ? (
-            <div className="flex-1 flex items-center justify-center bg-[var(--tg-theme-secondary-bg-color)] rounded-xl px-4 font-bold text-base text-[var(--tg-theme-hint-color)]">1 пауч</div>
+            <div className="flex-1 flex items-center justify-center bg-[var(--tg-theme-secondary-bg-color)] rounded-xl px-4 py-3.5 font-bold text-xl text-[var(--tg-theme-hint-color)]">1 пауч</div>
           ) : (
             <input type="number" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Грамм" className="flex-1 min-w-0 bg-[var(--tg-theme-secondary-bg-color)] border-none rounded-xl py-3.5 px-4 outline-none font-bold text-xl" />
           )}
-          <button onClick={addFeeding} disabled={selectedFood !== FoodType.POUCH && !amount} className={`tg-button-main px-10 rounded-xl shrink-0 ${selectedFood !== FoodType.POUCH && !amount ? 'opacity-50 grayscale' : ''}`}>ОК</button>
+          <button onClick={addFeeding} disabled={selectedFood !== FoodType.POUCH && !amount} className={`tg-button-main px-10 rounded-xl shrink-0 flex items-center justify-center ${selectedFood !== FoodType.POUCH && !amount ? 'opacity-50 grayscale' : ''}`}>ОК</button>
         </div>
       </div>
 
-      {/* History Section */}
       <div className="px-4 mt-6 mb-2 flex justify-between items-center">
         <span className="text-[var(--tg-theme-hint-color)] text-[11px] uppercase font-bold ml-2">История кормлений</span>
         {groupedHistory.length > 1 && (
@@ -379,7 +384,6 @@ const App: React.FC = () => {
         )}
       </div>
 
-      {/* Status/Settings Modal */}
       {showStatusModal && (
         <div className="fixed inset-0 z-[110] flex flex-col justify-end bg-black/60 backdrop-blur-sm">
           <div className="absolute inset-0" onClick={() => setShowStatusModal(false)} />
@@ -426,7 +430,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Weight Modal */}
       {showWeightModal && (
         <div className="fixed inset-0 z-[100] flex flex-col justify-end bg-black/50 backdrop-blur-[2px]">
           <div className="absolute inset-0" onClick={() => setShowWeightModal(false)} />

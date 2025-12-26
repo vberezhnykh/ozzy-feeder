@@ -62,14 +62,11 @@ const keepAlive = () => {
       } catch (err) {
         console.error('[Keep-Alive] Ping failed:', err.message);
       }
-    }, 14 * 60 * 1000); // 14 минут (Render засыпает через 15)
-  } else {
-    console.log('[Keep-Alive] RENDER_EXTERNAL_HOSTNAME not found, self-ping disabled.');
+    }, 14 * 60 * 1000); 
   }
 };
 
 keepAlive();
-// --------------------------------------
 
 app.use(cors());
 app.use(bodyParser.json());
@@ -86,7 +83,7 @@ app.post('/api/ai-advice', async (req, res) => {
   const { weight, age, consumed, norm } = req.body;
   
   if (!process.env.API_KEY) {
-    return res.json({ advice: "Добавьте API_KEY для получения советов от ИИ." });
+    return res.json({ advice: "Добавьте API_KEY в Render Settings." });
   }
 
   try {
@@ -106,23 +103,27 @@ const memoryDb = {};
 app.get('/api/state/:familyId', async (req, res) => {
   const { familyId } = req.params;
   
-  if (statesCollection) {
+  if (statesCollection && isConnected) {
     try {
       const doc = await statesCollection.findOne({ _id: familyId });
       return res.json(doc ? doc.state : null);
     } catch (e) {
       console.error("Read error:", e.message);
+      // Если БД упала во время запроса, пробуем выдать из памяти или вернуть null
+      return res.json(memoryDb[familyId] || null);
     }
   }
   
-  res.json(memoryDb[familyId] || null);
+  return res.json(memoryDb[familyId] || null);
 });
 
 app.post('/api/state/:familyId', async (req, res) => {
   const { familyId } = req.params;
   const newState = req.body;
 
-  if (statesCollection) {
+  memoryDb[familyId] = newState; // Всегда пишем в память как фоллбек
+
+  if (statesCollection && isConnected) {
     try {
       await statesCollection.updateOne(
         { _id: familyId },
@@ -132,11 +133,11 @@ app.post('/api/state/:familyId', async (req, res) => {
       return res.json({ success: true });
     } catch (e) {
       console.error("Write error:", e.message);
-      return res.status(500).json({ error: "Database write failed" });
+      // Не возвращаем 500, так как мы сохранили в memoryDb, клиент может продолжать работу
+      return res.json({ success: true, warning: "Saved in memory only" });
     }
   }
 
-  memoryDb[familyId] = newState;
   res.json({ success: true });
 });
 
