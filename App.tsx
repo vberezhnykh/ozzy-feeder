@@ -90,7 +90,7 @@ const App: React.FC = () => {
 
   const todayStr = useMemo(() => new Date().toDateString(), []);
 
-  // Таймер для обновления "времени с последнего кормления" каждую минуту
+  // Обновляем "текущий момент" каждую минуту для плавности таймера
   useEffect(() => {
     const timer = setInterval(() => {
       setNowTick(Date.now());
@@ -117,16 +117,21 @@ const App: React.FC = () => {
 
   const consumedToday = useMemo(() => todayHistory.reduce((acc, log) => acc + log.equivalentGrams, 0), [todayHistory]);
 
-  const lastFeedingTime = useMemo(() => {
+  const lastFeedingTimestamp = useMemo(() => {
     if (todayHistory.length === 0) return null;
-    const last = todayHistory[todayHistory.length - 1];
-    return last.timestamp;
+    return todayHistory[todayHistory.length - 1].timestamp;
   }, [todayHistory]);
 
-  const timeSinceLastFeeding = useMemo(() => {
-    if (!lastFeedingTime) return null;
-    return getIntervalText(nowTick, lastFeedingTime);
-  }, [lastFeedingTime, nowTick]);
+  const timeSinceLastFeedingStr = useMemo(() => {
+    if (!lastFeedingTimestamp) return 'Еще не ел сегодня';
+    return getIntervalText(nowTick, lastFeedingTimestamp);
+  }, [lastFeedingTimestamp, nowTick]);
+
+  // Проверка, не пора ли кушать (более 5 часов)
+  const isHungry = useMemo(() => {
+    if (!lastFeedingTimestamp) return false;
+    return (nowTick - lastFeedingTimestamp) > (5 * 60 * 60 * 1000);
+  }, [lastFeedingTimestamp, nowTick]);
 
   const checkHealth = async () => {
     try {
@@ -215,6 +220,7 @@ const App: React.FC = () => {
     setState(newState);
     localStorage.setItem('kitten_state_bot', JSON.stringify(newState));
     pushData(newState);
+    setNowTick(Date.now()); // Сразу обновляем время после действия
   };
 
   const addFeeding = () => {
@@ -356,18 +362,21 @@ const App: React.FC = () => {
           </div>
       </div>
 
-      <div className="tg-card space-y-3 shadow-sm relative">
-        <div className="flex justify-between items-start">
+      <div className="tg-card space-y-3 shadow-sm relative overflow-hidden">
+        {/* Индикатор голода (фоновая заливка) */}
+        {isHungry && <div className="absolute top-0 right-0 w-24 h-24 bg-orange-500/5 -rotate-45 translate-x-12 -translate-y-12 pointer-events-none" />}
+
+        <div className="flex justify-between items-start relative z-10">
           <div className="flex flex-col">
             <span className="text-[var(--tg-theme-hint-color)] text-[10px] uppercase font-bold mb-1">Прогресс дня</span>
             <span className="text-xl font-black">{consumedToday.toFixed(0)}г <span className="text-xs text-[var(--tg-theme-hint-color)] font-normal">/ {dailyNorm.toFixed(0)}г</span></span>
           </div>
           <div className="flex flex-col items-end">
             <span className="text-[var(--tg-theme-hint-color)] text-[10px] uppercase font-bold mb-1">С последней еды</span>
-            <div className="flex items-center gap-1.5 bg-blue-50 px-2 py-1 rounded-lg">
-               <Timer size={14} className="text-blue-500" />
-               <span className="text-sm font-bold text-blue-600">
-                 {timeSinceLastFeeding ? timeSinceLastFeeding : '---'}
+            <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-colors duration-500 ${isHungry ? 'bg-orange-100 text-orange-700' : 'bg-blue-50 text-blue-700'}`}>
+               <Timer size={16} className={`${isHungry ? 'animate-pulse' : ''}`} />
+               <span className="text-sm font-black whitespace-nowrap">
+                 {timeSinceLastFeedingStr}
                </span>
             </div>
           </div>
@@ -397,7 +406,7 @@ const App: React.FC = () => {
       <div className="tg-card !mt-0 space-y-4 shadow-sm">
         <div className="flex p-1 bg-[var(--tg-theme-secondary-bg-color)] rounded-xl">
           {(Object.keys(FOOD_LABELS) as FoodType[]).map((type) => (
-            <button key={type} onClick={() => setSelectedFood(type)} className={`flex-1 py-2 text-[11px] font-bold rounded-lg ${selectedFood === type ? 'bg-[var(--tg-theme-bg-color)] text-[var(--tg-theme-text-color)]' : 'text-[var(--tg-theme-hint-color)]'}`}>
+            <button key={type} onClick={() => setSelectedFood(type)} className={`flex-1 py-2 text-[11px] font-bold rounded-lg transition-all ${selectedFood === type ? 'bg-[var(--tg-theme-bg-color)] text-[var(--tg-theme-text-color)] shadow-sm' : 'text-[var(--tg-theme-hint-color)]'}`}>
               {FOOD_LABELS[type]}
             </button>
           ))}

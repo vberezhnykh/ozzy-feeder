@@ -17,7 +17,6 @@ const uri = process.env.MONGODB_URI;
 let statesCollection = null;
 let isConnected = false;
 
-// Инициализация Gemini
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 async function connectDB() {
@@ -50,19 +49,31 @@ async function connectDB() {
 
 connectDB();
 
-// --- МЕХАНИЗМ KEEP-ALIVE (АНТИ-СОН) ---
+// --- УЛУЧШЕННЫЙ МЕХАНИЗМ KEEP-ALIVE ---
 const keepAlive = () => {
-  const hostname = process.env.RENDER_EXTERNAL_HOSTNAME;
-  if (hostname) {
-    const url = `https://${hostname}.onrender.com/api/health`;
+  // На Render есть стандартная переменная RENDER_EXTERNAL_URL
+  const url = process.env.RENDER_EXTERNAL_URL || (process.env.RENDER_EXTERNAL_HOSTNAME ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}.onrender.com` : null);
+  
+  if (url) {
+    const healthUrl = `${url}/api/health`;
+    console.log(`[Keep-Alive] Initializing with URL: ${healthUrl}`);
+    
+    // Пингуем чаще (раз в 5 минут), чтобы Render не успевал "заснуть"
     setInterval(async () => {
       try {
-        await fetch(url);
-        console.log(`[Keep-Alive] Pinged ${url} at ${new Date().toISOString()}`);
+        const res = await fetch(healthUrl);
+        if (res.ok) {
+          console.log(`[Keep-Alive] Ping success: ${new Date().toLocaleTimeString()}`);
+        } else {
+          console.warn(`[Keep-Alive] Ping returned status ${res.status}`);
+        }
       } catch (err) {
-        console.error('[Keep-Alive] Ping failed:', err.message);
+        // Ошибка fetch failed часто бывает при временных сбоях сети самого хостинга
+        console.error('[Keep-Alive] Ping failed (network error):', err.message);
       }
-    }, 14 * 60 * 1000); 
+    }, 5 * 60 * 1000); 
+  } else {
+    console.warn("[Keep-Alive] No external URL found for pinging.");
   }
 };
 
@@ -109,7 +120,6 @@ app.get('/api/state/:familyId', async (req, res) => {
       return res.json(doc ? doc.state : null);
     } catch (e) {
       console.error("Read error:", e.message);
-      // Если БД упала во время запроса, пробуем выдать из памяти или вернуть null
       return res.json(memoryDb[familyId] || null);
     }
   }
@@ -121,7 +131,7 @@ app.post('/api/state/:familyId', async (req, res) => {
   const { familyId } = req.params;
   const newState = req.body;
 
-  memoryDb[familyId] = newState; // Всегда пишем в память как фоллбек
+  memoryDb[familyId] = newState;
 
   if (statesCollection && isConnected) {
     try {
@@ -133,7 +143,6 @@ app.post('/api/state/:familyId', async (req, res) => {
       return res.json({ success: true });
     } catch (e) {
       console.error("Write error:", e.message);
-      // Не возвращаем 500, так как мы сохранили в memoryDb, клиент может продолжать работу
       return res.json({ success: true, warning: "Saved in memory only" });
     }
   }

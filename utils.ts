@@ -62,8 +62,10 @@ export const formatTime = (timestamp: number) => {
 export const getIntervalText = (currentTimestamp: number, prevTimestamp: number): string => {
   const diffMs = currentTimestamp - prevTimestamp;
   const diffMins = Math.round(diffMs / 60000);
-  if (diffMins < 0) return '';
+  
+  if (diffMins < 2) return 'только что';
   if (diffMins < 60) return `${diffMins}м`;
+  
   const hrs = Math.floor(diffMins / 60);
   const mins = diffMins % 60;
   return mins > 0 ? `${hrs}ч ${mins}м` : `${hrs}ч`;
