@@ -17,7 +17,7 @@ const uri = process.env.MONGODB_URI;
 let statesCollection = null;
 let isConnected = false;
 
-// Инициализация Gemini (используем API_KEY из окружения)
+// Инициализация Gemini
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 async function connectDB() {
@@ -50,14 +50,38 @@ async function connectDB() {
 
 connectDB();
 
+// --- МЕХАНИЗМ KEEP-ALIVE (АНТИ-СОН) ---
+const keepAlive = () => {
+  const hostname = process.env.RENDER_EXTERNAL_HOSTNAME;
+  if (hostname) {
+    const url = `https://${hostname}.onrender.com/api/health`;
+    setInterval(async () => {
+      try {
+        await fetch(url);
+        console.log(`[Keep-Alive] Pinged ${url} at ${new Date().toISOString()}`);
+      } catch (err) {
+        console.error('[Keep-Alive] Ping failed:', err.message);
+      }
+    }, 14 * 60 * 1000); // 14 минут (Render засыпает через 15)
+  } else {
+    console.log('[Keep-Alive] RENDER_EXTERNAL_HOSTNAME not found, self-ping disabled.');
+  }
+};
+
+keepAlive();
+// --------------------------------------
+
 app.use(cors());
 app.use(bodyParser.json());
 
 app.get('/api/health', (req, res) => {
-  res.json({ dbConnected: isConnected });
+  res.json({ 
+    dbConnected: isConnected,
+    timestamp: new Date().toISOString(),
+    status: "awake"
+  });
 });
 
-// Новый эндпоинт для AI советов
 app.post('/api/ai-advice', async (req, res) => {
   const { weight, age, consumed, norm } = req.body;
   

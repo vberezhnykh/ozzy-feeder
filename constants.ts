@@ -5,6 +5,8 @@ export const BIRTH_DATE = '2025-08-04';
 export const INITIAL_WEIGHT_DATE = '2025-12-26';
 export const INITIAL_WEIGHT = 2.5;
 
+export const DEFAULT_FAMILY_ID = 'ozzy-home'; // Единый ID для вас с женой
+
 export const POUCH_DRY_EQUIVALENT = 20; // 1 pouch = 20g dry
 export const PATE_DRY_EQUIVALENT_RATIO = 1; // 1g pate = 1g dry
 

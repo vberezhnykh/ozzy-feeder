@@ -10,7 +10,8 @@ import {
   INITIAL_WEIGHT_DATE, 
   BIRTH_DATE, 
   FOOD_LABELS,
-  POUCH_DRY_EQUIVALENT
+  POUCH_DRY_EQUIVALENT,
+  DEFAULT_FAMILY_ID
 } from './constants';
 import { 
   calculateMonthsAge, 
@@ -28,14 +29,12 @@ import {
   Trash2, 
   TrendingUp,
   X,
-  Cloud,
-  CloudOff,
   Settings,
   RefreshCw,
-  Database,
   CheckCircle2,
   AlertCircle,
-  Sparkles
+  Sparkles,
+  Zap
 } from 'lucide-react';
 
 const INITIAL_STATE: KittenState = {
@@ -46,10 +45,9 @@ const INITIAL_STATE: KittenState = {
 };
 
 const App: React.FC = () => {
-  const [familyId, setFamilyId] = useState<string>(() => localStorage.getItem('ozzy_family_id') || '');
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error'>('synced');
   const [dbConnected, setDbConnected] = useState<boolean | null>(null);
-  const [showSettings, setShowSettings] = useState(!localStorage.getItem('ozzy_family_id'));
+  const [showStatusModal, setShowStatusModal] = useState(false);
   const [aiAdvice, setAiAdvice] = useState<string>('');
   
   const [state, setState] = useState<KittenState>(() => {
@@ -111,20 +109,15 @@ const App: React.FC = () => {
     }
   };
 
-  const fetchRemoteData = useCallback(async (id: string) => {
-    if (!id) return;
+  const fetchRemoteData = useCallback(async () => {
     try {
       setSyncStatus('syncing');
-      const res = await fetch(`/api/state/${id}`);
+      const res = await fetch(`/api/state/${DEFAULT_FAMILY_ID}`);
       const remoteState = await res.json();
       
       if (remoteState) {
         setState(remoteState);
         localStorage.setItem('kitten_state_bot', JSON.stringify(remoteState));
-      } else {
-        // Если на сервере пусто для этого ID, сбрасываем локальный стейт
-        setState(INITIAL_STATE);
-        localStorage.setItem('kitten_state_bot', JSON.stringify(INITIAL_STATE));
       }
       setSyncStatus('synced');
     } catch (e) {
@@ -133,11 +126,10 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const pushData = async (id: string, currentState: KittenState) => {
-    if (!id) return;
+  const pushData = async (currentState: KittenState) => {
     try {
       setSyncStatus('syncing');
-      await fetch(`/api/state/${id}`, {
+      await fetch(`/api/state/${DEFAULT_FAMILY_ID}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(currentState)
@@ -156,22 +148,22 @@ const App: React.FC = () => {
       WebApp.setHeaderColor('secondary_bg_color');
     }
     checkHealth();
-    if (familyId) {
-      fetchRemoteData(familyId);
-      fetchAiAdvice();
-    }
+    fetchRemoteData();
+    fetchAiAdvice();
   }, []);
 
   useEffect(() => {
-    if (!familyId) return;
-    const interval = setInterval(() => fetchRemoteData(familyId), 30000);
+    const interval = setInterval(() => {
+      fetchRemoteData();
+      checkHealth();
+    }, 30000);
     return () => clearInterval(interval);
-  }, [familyId, fetchRemoteData]);
+  }, [fetchRemoteData]);
 
   const updateStateAndSync = (newState: KittenState) => {
     setState(newState);
     localStorage.setItem('kitten_state_bot', JSON.stringify(newState));
-    if (familyId) pushData(familyId, newState);
+    pushData(newState);
   };
 
   const remainingToday = Math.max(0, dailyNorm - consumedToday);
@@ -212,34 +204,22 @@ const App: React.FC = () => {
     setTimeout(fetchAiAdvice, 1000);
   };
 
-  const saveSettings = () => {
-    const normalizedId = familyId.toLowerCase().trim().replace(/\s/g, '-');
-    localStorage.setItem('ozzy_family_id', normalizedId);
-    // Сразу сбрасываем в интерфейсе перед загрузкой, чтобы не было "залипания"
-    setState(INITIAL_STATE);
-    setShowSettings(false);
-    fetchRemoteData(normalizedId);
-    checkHealth();
-  };
-
   return (
     <div className="flex flex-col min-h-screen max-w-xl mx-auto pb-10">
       {/* Header */}
       <div className="px-4 py-3 flex justify-between items-center bg-[var(--tg-theme-secondary-bg-color)]">
          <div className="flex flex-col">
-            <span className="text-[var(--tg-theme-hint-color)] text-[10px] uppercase font-bold tracking-wider">Котёнок Оззи</span>
+            <span className="text-[var(--tg-theme-hint-color)] text-[10px] uppercase font-bold tracking-wider leading-none mb-1">Оззи Трекер</span>
             <div className="flex items-center gap-2">
               <span className={`w-2 h-2 rounded-full ${syncStatus === 'synced' ? 'bg-green-500' : syncStatus === 'syncing' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'}`} />
-              <span className="text-[var(--tg-theme-text-color)] text-lg font-bold truncate max-w-[120px]">
-                {familyId || 'Без синхр.'}
-              </span>
+              <span className="text-[var(--tg-theme-text-color)] text-lg font-bold">Семья</span>
             </div>
          </div>
          <div className="flex gap-2">
-           <button onClick={() => { fetchRemoteData(familyId); checkHealth(); fetchAiAdvice(); }} className="bg-[var(--tg-theme-bg-color)] p-2 rounded-full text-[var(--tg-theme-hint-color)] shadow-sm active:rotate-180 transition-transform duration-500">
+           <button onClick={() => { fetchRemoteData(); checkHealth(); fetchAiAdvice(); }} className="bg-[var(--tg-theme-bg-color)] p-2 rounded-full text-[var(--tg-theme-hint-color)] shadow-sm active:rotate-180 transition-transform duration-500">
              <RefreshCw size={18} className={syncStatus === 'syncing' ? 'animate-spin' : ''} />
            </button>
-           <button onClick={() => setShowSettings(true)} className="bg-[var(--tg-theme-bg-color)] p-2 rounded-full text-[var(--tg-theme-link-color)] shadow-sm">
+           <button onClick={() => setShowStatusModal(true)} className="bg-[var(--tg-theme-bg-color)] p-2 rounded-full text-[var(--tg-theme-link-color)] shadow-sm">
              <Settings size={20} />
            </button>
          </div>
@@ -332,24 +312,49 @@ const App: React.FC = () => {
         ))}
       </div>
 
-      {/* Settings Modal */}
-      {showSettings && (
+      {/* Status/Settings Modal */}
+      {showStatusModal && (
         <div className="fixed inset-0 z-[110] flex flex-col justify-end bg-black/60 backdrop-blur-sm">
+          <div className="absolute inset-0" onClick={() => setShowStatusModal(false)} />
           <div className="relative bg-[var(--tg-theme-bg-color)] rounded-t-[28px] p-8 shadow-2xl">
-            <h2 className="text-2xl font-black mb-2 tracking-tight">Настройка семьи</h2>
+            <div className="w-14 h-1.5 bg-[var(--tg-theme-secondary-bg-color)] rounded-full mx-auto mb-8" />
+            <h2 className="text-2xl font-black mb-6 tracking-tight">Статус системы</h2>
             
-            <div className={`mb-6 p-4 rounded-xl flex items-center gap-3 ${dbConnected ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
-              {dbConnected ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}
-              <div className="flex flex-col">
-                <span className="text-[10px] uppercase font-black opacity-60 leading-none mb-1">Статус базы</span>
-                <span className="text-sm font-bold leading-none">{dbConnected ? 'Облако активно' : 'Ошибка подключения'}</span>
+            <div className="space-y-4 mb-8">
+              <div className={`p-4 rounded-2xl flex items-center gap-4 ${dbConnected ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${dbConnected ? 'bg-green-100' : 'bg-red-100'}`}>
+                  {dbConnected ? <CheckCircle2 size={24} /> : <AlertCircle size={24} />}
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] uppercase font-black opacity-60 mb-0.5">База данных</span>
+                  <span className="text-base font-bold leading-tight">{dbConnected ? 'Облако подключено' : 'Ошибка соединения'}</span>
+                </div>
+              </div>
+              
+              <div className="p-4 rounded-2xl flex items-center gap-4 bg-blue-50 text-blue-700 border border-blue-100">
+                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                  <Zap size={24} className="fill-blue-500 text-blue-500" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] uppercase font-black opacity-60 mb-0.5">Режим бодрости</span>
+                  <span className="text-base font-bold leading-tight">Включен (Self-Ping)</span>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl flex items-center gap-4 bg-[var(--tg-theme-secondary-bg-color)] text-[var(--tg-theme-text-color)]">
+                <div className="w-10 h-10 rounded-full bg-[var(--tg-theme-bg-color)] flex items-center justify-center">
+                   <RefreshCw size={22} className={syncStatus === 'syncing' ? 'animate-spin' : ''} />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] uppercase font-black opacity-60 mb-0.5">Синхронизация</span>
+                  <span className="text-base font-bold leading-tight">
+                    {syncStatus === 'synced' ? 'Синхронизировано' : syncStatus === 'syncing' ? 'Обновление...' : 'Ошибка синхр.'}
+                  </span>
+                </div>
               </div>
             </div>
 
-            <p className="text-[var(--tg-theme-hint-color)] text-sm mb-6 leading-snug">Введите ID, чтобы объединить данные с другими членами семьи.</p>
-            <input type="text" value={familyId} onChange={(e) => setFamilyId(e.target.value)} className="w-full text-center text-3xl font-black bg-[var(--tg-theme-secondary-bg-color)] rounded-2xl py-5 outline-none mb-8 border-2 border-transparent focus:border-[var(--tg-theme-link-color)] transition-all" placeholder="ID-семьи" />
-            <button onClick={saveSettings} disabled={!familyId} className="w-full tg-button-main py-4.5 rounded-2xl text-lg font-black tracking-wide disabled:opacity-50 shadow-lg active:scale-[0.98] transition-all">СОХРАНИТЬ И ВОЙТИ</button>
-            <button onClick={() => setShowSettings(false)} className="w-full mt-3 py-3 text-[var(--tg-theme-hint-color)] font-bold text-sm">ЗАКРЫТЬ</button>
+            <button onClick={() => setShowStatusModal(false)} className="w-full tg-button-main py-4.5 rounded-2xl text-lg font-black tracking-wide shadow-lg active:scale-[0.98] transition-all">ВЕРНУТЬСЯ К ОЗЗИ</button>
           </div>
         </div>
       )}
