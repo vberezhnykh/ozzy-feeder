@@ -1,0 +1,5 @@
+{
+  "name": "Kitten NutriTracker",
+  "description": "A Telegram-styled dashboard for tracking your kitten's daily food intake, estimating weight growth, and calculating remaining meals based on Hill's feeding guides.",
+  "requestFramePermissions": []
+}
