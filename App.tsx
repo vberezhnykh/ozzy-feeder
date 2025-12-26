@@ -31,24 +31,37 @@ import {
   Cloud,
   CloudOff,
   Settings,
-  RefreshCw
+  RefreshCw,
+  Database,
+  CheckCircle2,
+  AlertCircle,
+  Sparkles
 } from 'lucide-react';
 
+const INITIAL_STATE: KittenState = {
+  birthDate: BIRTH_DATE,
+  lastManualWeight: INITIAL_WEIGHT,
+  lastWeightDate: INITIAL_WEIGHT_DATE,
+  history: []
+};
+
 const App: React.FC = () => {
-  // --- Состояния ---
   const [familyId, setFamilyId] = useState<string>(() => localStorage.getItem('ozzy_family_id') || '');
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error'>('synced');
+  const [dbConnected, setDbConnected] = useState<boolean | null>(null);
   const [showSettings, setShowSettings] = useState(!localStorage.getItem('ozzy_family_id'));
+  const [aiAdvice, setAiAdvice] = useState<string>('');
   
   const [state, setState] = useState<KittenState>(() => {
     const saved = localStorage.getItem('kitten_state_bot');
-    if (saved) return JSON.parse(saved);
-    return {
-      birthDate: BIRTH_DATE,
-      lastManualWeight: INITIAL_WEIGHT,
-      lastWeightDate: INITIAL_WEIGHT_DATE,
-      history: []
-    };
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return INITIAL_STATE;
+      }
+    }
+    return INITIAL_STATE;
   });
 
   const [amount, setAmount] = useState<string>('');
@@ -56,16 +69,62 @@ const App: React.FC = () => {
   const [showWeightModal, setShowWeightModal] = useState(false);
   const [newWeight, setNewWeight] = useState<string>('');
 
-  // --- API Функции ---
+  const now = new Date();
+  const currentAge = useMemo(() => calculateMonthsAge(now), [now]);
+  const currentWeight = useMemo(() => estimateWeight(state.lastManualWeight, state.lastWeightDate), [state, now]);
+  const dailyNorm = useMemo(() => getDailyNorm(currentWeight, currentAge), [currentWeight, currentAge]);
+  const weightGained = useMemo(() => (currentWeight - state.lastManualWeight) * 1000, [currentWeight, state.lastManualWeight]);
+
+  const todayHistory = useMemo(() => {
+    const todayStr = new Date().toDateString();
+    return state.history.filter(log => new Date(log.timestamp).toDateString() === todayStr);
+  }, [state.history]);
+
+  const consumedToday = useMemo(() => todayHistory.reduce((acc, log) => acc + log.equivalentGrams, 0), [todayHistory]);
+
+  const checkHealth = async () => {
+    try {
+      const res = await fetch('/api/health');
+      const data = await res.json();
+      setDbConnected(data.dbConnected);
+    } catch (e) {
+      setDbConnected(false);
+    }
+  };
+
+  const fetchAiAdvice = async () => {
+    try {
+      const res = await fetch('/api/ai-advice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          weight: currentWeight,
+          age: currentAge,
+          consumed: consumedToday,
+          norm: dailyNorm
+        })
+      });
+      const data = await res.json();
+      setAiAdvice(data.advice);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const fetchRemoteData = useCallback(async (id: string) => {
     if (!id) return;
     try {
       setSyncStatus('syncing');
       const res = await fetch(`/api/state/${id}`);
       const remoteState = await res.json();
+      
       if (remoteState) {
         setState(remoteState);
         localStorage.setItem('kitten_state_bot', JSON.stringify(remoteState));
+      } else {
+        // Если на сервере пусто для этого ID, сбрасываем локальный стейт
+        setState(INITIAL_STATE);
+        localStorage.setItem('kitten_state_bot', JSON.stringify(INITIAL_STATE));
       }
       setSyncStatus('synced');
     } catch (e) {
@@ -89,7 +148,6 @@ const App: React.FC = () => {
     }
   };
 
-  // --- Эффекты ---
   useEffect(() => {
     const WebApp = (window as any).Telegram?.WebApp;
     if (WebApp) {
@@ -97,7 +155,11 @@ const App: React.FC = () => {
       WebApp.expand();
       WebApp.setHeaderColor('secondary_bg_color');
     }
-    if (familyId) fetchRemoteData(familyId);
+    checkHealth();
+    if (familyId) {
+      fetchRemoteData(familyId);
+      fetchAiAdvice();
+    }
   }, []);
 
   useEffect(() => {
@@ -112,27 +174,11 @@ const App: React.FC = () => {
     if (familyId) pushData(familyId, newState);
   };
 
-  // --- Расчеты ---
-  const now = new Date();
-  const currentAge = useMemo(() => calculateMonthsAge(now), [now]);
-  const currentWeight = useMemo(() => estimateWeight(state.lastManualWeight, state.lastWeightDate), [state, now]);
-  const dailyNorm = useMemo(() => getDailyNorm(currentWeight, currentAge), [currentWeight, currentAge]);
-  
-  const weightGained = useMemo(() => (currentWeight - state.lastManualWeight) * 1000, [currentWeight, state.lastManualWeight]);
-
-  const todayHistory = useMemo(() => {
-    const todayStr = new Date().toDateString();
-    return state.history.filter(log => new Date(log.timestamp).toDateString() === todayStr);
-  }, [state.history]);
-
-  const consumedToday = useMemo(() => todayHistory.reduce((acc, log) => acc + log.equivalentGrams, 0), [todayHistory]);
-
   const remainingToday = Math.max(0, dailyNorm - consumedToday);
   const totalMealsTarget = 4;
   const mealsLeftToday = Math.max(0, totalMealsTarget - todayHistory.length);
   const nextMealAmount = mealsLeftToday > 0 ? (remainingToday / mealsLeftToday).toFixed(0) : remainingToday.toFixed(0);
 
-  // --- Обработчики ---
   const addFeeding = () => {
     let val: number, equiv: number;
     if (selectedFood === FoodType.POUCH) {
@@ -154,6 +200,7 @@ const App: React.FC = () => {
     updateStateAndSync({ ...state, history: [newLog, ...state.history] });
     setAmount('');
     (window as any).Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
+    setTimeout(fetchAiAdvice, 1000);
   };
 
   const updateWeight = () => {
@@ -162,12 +209,17 @@ const App: React.FC = () => {
     updateStateAndSync({ ...state, lastManualWeight: val, lastWeightDate: new Date().toISOString() });
     setNewWeight('');
     setShowWeightModal(false);
+    setTimeout(fetchAiAdvice, 1000);
   };
 
   const saveSettings = () => {
-    localStorage.setItem('ozzy_family_id', familyId);
+    const normalizedId = familyId.toLowerCase().trim().replace(/\s/g, '-');
+    localStorage.setItem('ozzy_family_id', normalizedId);
+    // Сразу сбрасываем в интерфейсе перед загрузкой, чтобы не было "залипания"
+    setState(INITIAL_STATE);
     setShowSettings(false);
-    fetchRemoteData(familyId);
+    fetchRemoteData(normalizedId);
+    checkHealth();
   };
 
   return (
@@ -184,7 +236,7 @@ const App: React.FC = () => {
             </div>
          </div>
          <div className="flex gap-2">
-           <button onClick={() => fetchRemoteData(familyId)} className="bg-[var(--tg-theme-bg-color)] p-2 rounded-full text-[var(--tg-theme-hint-color)] shadow-sm active:rotate-180 transition-transform duration-500">
+           <button onClick={() => { fetchRemoteData(familyId); checkHealth(); fetchAiAdvice(); }} className="bg-[var(--tg-theme-bg-color)] p-2 rounded-full text-[var(--tg-theme-hint-color)] shadow-sm active:rotate-180 transition-transform duration-500">
              <RefreshCw size={18} className={syncStatus === 'syncing' ? 'animate-spin' : ''} />
            </button>
            <button onClick={() => setShowSettings(true)} className="bg-[var(--tg-theme-bg-color)] p-2 rounded-full text-[var(--tg-theme-link-color)] shadow-sm">
@@ -216,7 +268,7 @@ const App: React.FC = () => {
       </div>
 
       {/* Progress Bar */}
-      <div className="tg-card space-y-3 shadow-sm">
+      <div className="tg-card space-y-3 shadow-sm relative overflow-hidden">
         <div className="flex justify-between items-end">
           <span className="text-sm font-bold">Прогресс дня</span>
           <span className="text-xl font-black">{consumedToday.toFixed(0)}г <span className="text-xs text-[var(--tg-theme-hint-color)] font-normal">/ {dailyNorm.toFixed(0)}г</span></span>
@@ -228,10 +280,18 @@ const App: React.FC = () => {
           <span>Остаток: <span className="text-[var(--tg-theme-text-color)] font-bold">{remainingToday.toFixed(0)}г</span></span>
           <span>{mealsLeftToday > 0 ? `Порция: ~${nextMealAmount}г` : 'Норма выполнена!'}</span>
         </div>
+
+        {/* AI Advice Section */}
+        {aiAdvice && (
+          <div className="mt-4 p-3 bg-blue-50/50 rounded-xl border border-blue-100 flex items-start gap-2 animate-in fade-in slide-in-from-bottom-2 duration-500">
+             <Sparkles className="text-blue-400 shrink-0 mt-0.5" size={14} />
+             <p className="text-[11px] text-blue-800 font-medium leading-tight italic">{aiAdvice}</p>
+          </div>
+        )}
       </div>
 
       {/* Add Feeding */}
-      <div className="px-4 mt-6 mb-2">
+      <div className="px-4 mt-4 mb-2">
         <span className="text-[var(--tg-theme-hint-color)] text-[11px] uppercase font-bold ml-2">Добавить кормление</span>
       </div>
       <div className="tg-card !mt-0 space-y-4 shadow-sm">
@@ -272,14 +332,24 @@ const App: React.FC = () => {
         ))}
       </div>
 
-      {/* Settings Modal (Family ID) */}
+      {/* Settings Modal */}
       {showSettings && (
         <div className="fixed inset-0 z-[110] flex flex-col justify-end bg-black/60 backdrop-blur-sm">
           <div className="relative bg-[var(--tg-theme-bg-color)] rounded-t-[28px] p-8 shadow-2xl">
             <h2 className="text-2xl font-black mb-2 tracking-tight">Настройка семьи</h2>
-            <p className="text-[var(--tg-theme-hint-color)] text-sm mb-8 leading-snug">Придумайте секретный ID (например, <code>ozzy-2025</code>) и дайте его жене, чтобы ваши данные объединились.</p>
-            <input type="text" value={familyId} onChange={(e) => setFamilyId(e.target.value.toLowerCase().replace(/\s/g, '-'))} className="w-full text-center text-3xl font-black bg-[var(--tg-theme-secondary-bg-color)] rounded-2xl py-5 outline-none mb-8 border-2 border-transparent focus:border-[var(--tg-theme-link-color)] transition-all" placeholder="ID-семьи" />
+            
+            <div className={`mb-6 p-4 rounded-xl flex items-center gap-3 ${dbConnected ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
+              {dbConnected ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}
+              <div className="flex flex-col">
+                <span className="text-[10px] uppercase font-black opacity-60 leading-none mb-1">Статус базы</span>
+                <span className="text-sm font-bold leading-none">{dbConnected ? 'Облако активно' : 'Ошибка подключения'}</span>
+              </div>
+            </div>
+
+            <p className="text-[var(--tg-theme-hint-color)] text-sm mb-6 leading-snug">Введите ID, чтобы объединить данные с другими членами семьи.</p>
+            <input type="text" value={familyId} onChange={(e) => setFamilyId(e.target.value)} className="w-full text-center text-3xl font-black bg-[var(--tg-theme-secondary-bg-color)] rounded-2xl py-5 outline-none mb-8 border-2 border-transparent focus:border-[var(--tg-theme-link-color)] transition-all" placeholder="ID-семьи" />
             <button onClick={saveSettings} disabled={!familyId} className="w-full tg-button-main py-4.5 rounded-2xl text-lg font-black tracking-wide disabled:opacity-50 shadow-lg active:scale-[0.98] transition-all">СОХРАНИТЬ И ВОЙТИ</button>
+            <button onClick={() => setShowSettings(false)} className="w-full mt-3 py-3 text-[var(--tg-theme-hint-color)] font-bold text-sm">ЗАКРЫТЬ</button>
           </div>
         </div>
       )}
