@@ -39,7 +39,6 @@ export const getDailyNorm = (weight: number, ageMonths: number): number => {
   if (ageMonths < 3) bracket = FEEDING_TABLE.UNDER_3_MO;
   else if (ageMonths < 7) bracket = FEEDING_TABLE.MO_4_TO_6;
 
-  // Find surrounding points for linear interpolation
   const sorted = [...bracket].sort((a, b) => a.weight - b.weight);
   
   if (weight <= sorted[0].weight) return sorted[0].norm;
@@ -49,7 +48,6 @@ export const getDailyNorm = (weight: number, ageMonths: number): number => {
     const p1 = sorted[i];
     const p2 = sorted[i+1];
     if (weight >= p1.weight && weight <= p2.weight) {
-      // Linear interpolation: y = y1 + (x - x1) * (y2 - y1) / (x2 - x1)
       return p1.norm + (weight - p1.weight) * (p2.norm - p1.norm) / (p2.weight - p1.weight);
     }
   }
@@ -59,4 +57,14 @@ export const getDailyNorm = (weight: number, ageMonths: number): number => {
 
 export const formatTime = (timestamp: number) => {
   return new Date(timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+};
+
+export const getIntervalText = (currentTimestamp: number, prevTimestamp: number): string => {
+  const diffMs = currentTimestamp - prevTimestamp;
+  const diffMins = Math.round(diffMs / 60000);
+  if (diffMins < 0) return '';
+  if (diffMins < 60) return `${diffMins}м`;
+  const hrs = Math.floor(diffMins / 60);
+  const mins = diffMins % 60;
+  return mins > 0 ? `${hrs}ч ${mins}м` : `${hrs}ч`;
 };
