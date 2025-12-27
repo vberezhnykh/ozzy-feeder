@@ -41,7 +41,8 @@ import {
   ChevronUp,
   Clock,
   Edit2,
-  Timer
+  Timer,
+  Lock
 } from 'lucide-react';
 
 const INITIAL_STATE: KittenState = {
@@ -438,12 +439,16 @@ const App: React.FC = () => {
 
       <div className="space-y-4 px-4">
         {groupedHistory.map(([dateKey, logs]) => {
+          const isToday = dateKey === todayStr;
           const dayLogs = [...logs].sort((a, b) => a.timestamp - b.timestamp);
           return (
             <div key={dateKey}>
-              <div className="flex items-center gap-2 mb-2 ml-2">
-                <Calendar size={10} className="text-[var(--tg-theme-hint-color)]" />
-                <span className="text-[10px] text-[var(--tg-theme-hint-color)] font-bold uppercase">{formatDateLabel(dateKey)}</span>
+              <div className="flex items-center justify-between mb-2 ml-2 pr-2">
+                <div className="flex items-center gap-2">
+                  <Calendar size={10} className="text-[var(--tg-theme-hint-color)]" />
+                  <span className="text-[10px] text-[var(--tg-theme-hint-color)] font-bold uppercase">{formatDateLabel(dateKey)}</span>
+                </div>
+                {!isToday && <div className="flex items-center gap-1 text-[8px] text-[var(--tg-theme-hint-color)] font-bold uppercase tracking-tight"><Lock size={8} /> Архив</div>}
               </div>
               <div className="tg-card !m-0 p-0 overflow-hidden divide-y divide-[var(--tg-theme-secondary-bg-color)] shadow-sm">
                 {[...dayLogs].reverse().map((log, idx, arr) => {
@@ -458,14 +463,23 @@ const App: React.FC = () => {
                             <p className="text-sm font-bold">{FOOD_LABELS[log.type]}</p>
                             {interval && <span className="text-[8px] bg-blue-50 text-blue-500 px-1.5 py-0.5 rounded font-black uppercase">через {interval}</span>}
                           </div>
-                          <button onClick={() => startEditTime(log)} className="text-[10px] text-[var(--tg-theme-hint-color)] flex items-center gap-1 active:opacity-50">
-                            <Clock size={10} /> {formatTime(log.timestamp)} • {log.type === FoodType.POUCH ? '1 шт' : `${log.amount}г`} <Edit2 size={8} />
-                          </button>
+                          <div className="flex items-center gap-2">
+                             <span className="text-[10px] text-[var(--tg-theme-hint-color)] flex items-center gap-1">
+                               <Clock size={10} /> {formatTime(log.timestamp)} • {log.type === FoodType.POUCH ? '1 шт' : `${log.amount}г`}
+                             </span>
+                             {isToday && (
+                               <button onClick={() => startEditTime(log)} className="text-[10px] text-[var(--tg-theme-link-color)] flex items-center gap-1 active:opacity-50">
+                                 <Edit2 size={8} /> Правка
+                               </button>
+                             )}
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
                         <span className="font-bold text-sm">+{log.equivalentGrams.toFixed(0)}г</span>
-                        <button onClick={() => deleteFeeding(log.id)} className="text-red-400 p-2"><Trash2 size={16} /></button>
+                        {isToday && (
+                          <button onClick={() => deleteFeeding(log.id)} className="text-red-400 p-2"><Trash2 size={16} /></button>
+                        )}
                       </div>
                     </div>
                   );
