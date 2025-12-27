@@ -42,7 +42,9 @@ import {
   Clock,
   Edit2,
   Timer,
-  Lock
+  Lock,
+  Package,
+  Beef
 } from 'lucide-react';
 
 const INITIAL_STATE: KittenState = {
@@ -291,6 +293,24 @@ const App: React.FC = () => {
     return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
   };
 
+  const getFoodIcon = (type: FoodType) => {
+    switch(type) {
+      case FoodType.DRY: return <Zap size={18} />;
+      case FoodType.POUCH: return <Package size={18} />;
+      case FoodType.PATE: return <Beef size={18} />;
+      default: return <Utensils size={18} />;
+    }
+  };
+
+  const getFoodIconBg = (type: FoodType) => {
+    switch(type) {
+      case FoodType.DRY: return 'bg-amber-100 text-amber-600';
+      case FoodType.POUCH: return 'bg-blue-100 text-blue-600';
+      case FoodType.PATE: return 'bg-rose-100 text-rose-600';
+      default: return 'bg-slate-100 text-slate-600';
+    }
+  };
+
   const renderTimeline = () => {
     const startHour = 6;
     const endHour = 24;
@@ -440,13 +460,18 @@ const App: React.FC = () => {
       <div className="space-y-4 px-4">
         {groupedHistory.map(([dateKey, logs]) => {
           const isToday = dateKey === todayStr;
+          const dayTotal = logs.reduce((sum, l) => sum + l.equivalentGrams, 0);
           const dayLogs = [...logs].sort((a, b) => a.timestamp - b.timestamp);
+          
           return (
             <div key={dateKey}>
               <div className="flex items-center justify-between mb-2 ml-2 pr-2">
                 <div className="flex items-center gap-2">
                   <Calendar size={10} className="text-[var(--tg-theme-hint-color)]" />
-                  <span className="text-[10px] text-[var(--tg-theme-hint-color)] font-bold uppercase">{formatDateLabel(dateKey)}</span>
+                  <span className="text-[10px] text-[var(--tg-theme-hint-color)] font-bold uppercase">
+                    {formatDateLabel(dateKey)} 
+                    {!isToday && <span className="text-[var(--tg-theme-text-color)] ml-1 font-black"> • {dayTotal.toFixed(0)}г</span>}
+                  </span>
                 </div>
                 {!isToday && <div className="flex items-center gap-1 text-[8px] text-[var(--tg-theme-hint-color)] font-bold uppercase tracking-tight"><Lock size={8} /> Архив</div>}
               </div>
@@ -457,7 +482,9 @@ const App: React.FC = () => {
                   return (
                     <div key={log.id} className="flex items-center justify-between p-4 bg-[var(--tg-theme-bg-color)]">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-[var(--tg-theme-secondary-bg-color)] flex items-center justify-center text-[var(--tg-theme-link-color)]"><Utensils size={18} /></div>
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${getFoodIconBg(log.type)}`}>
+                          {getFoodIcon(log.type)}
+                        </div>
                         <div>
                           <div className="flex items-center gap-2">
                             <p className="text-sm font-bold">{FOOD_LABELS[log.type]}</p>
