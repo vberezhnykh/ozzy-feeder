@@ -13,11 +13,17 @@ export interface FeedingLog {
   equivalentGrams: number; // converted to dry equivalent
 }
 
+export interface KittenSettings {
+  remindersEnabled: boolean;
+}
+
 export interface KittenState {
   birthDate: string; // ISO string
   lastManualWeight: number; // in kg
   lastWeightDate: string; // ISO string
   history: FeedingLog[];
+  settings: KittenSettings;
+  lastReminderTimestamp?: number;
 }
 
 export interface FeedingNorm {
