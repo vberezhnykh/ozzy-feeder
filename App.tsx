@@ -44,9 +44,7 @@ import {
   Timer,
   Lock,
   Package,
-  Beef,
-  Bell,
-  BellOff
+  Beef
 } from 'lucide-react';
 
 const INITIAL_STATE: KittenState = {
@@ -54,9 +52,7 @@ const INITIAL_STATE: KittenState = {
   lastManualWeight: INITIAL_WEIGHT,
   lastWeightDate: INITIAL_WEIGHT_DATE,
   history: [],
-  settings: {
-    remindersEnabled: false
-  }
+  settings: {}
 };
 
 const App: React.FC = () => {
@@ -71,8 +67,7 @@ const App: React.FC = () => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Миграция старых данных
-        if (!parsed.settings) parsed.settings = { remindersEnabled: false };
+        if (!parsed.settings) parsed.settings = {};
         parsed.history.sort((a: FeedingLog, b: FeedingLog) => b.timestamp - a.timestamp);
         return parsed;
       } catch (e) {
@@ -99,7 +94,6 @@ const App: React.FC = () => {
 
   const todayStr = useMemo(() => new Date().toDateString(), []);
 
-  // Обновляем "текущий момент" каждые 30 секунд
   useEffect(() => {
     const timer = setInterval(() => {
       setNowTick(Date.now());
@@ -124,73 +118,6 @@ const App: React.FC = () => {
     return todayHistory[todayHistory.length - 1].timestamp;
   }, [todayHistory]);
 
-  // Логика напоминаний
-  useEffect(() => {
-    if (!state.settings.remindersEnabled) return;
-
-    const checkReminders = () => {
-      const d = new Date();
-      const currentMinTimestamp = new Date(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes()).getTime();
-      
-      // Если уже отправляли уведомление в эту минуту, пропускаем
-      if (state.lastReminderTimestamp === currentMinTimestamp) return;
-
-      // Если норма уже набрана, уведомления не нужны
-      if (consumedToday >= dailyNorm) return;
-
-      let shouldNotify = false;
-      let message = "";
-
-      // 1. Утреннее правило: 8:00 утра, если еще не ел
-      if (d.getHours() === 8 && d.getMinutes() === 0 && todayHistory.length === 0) {
-        shouldNotify = true;
-        message = "Доброе утро! Оззи еще не завтракал. Пора покормить котенка! 🐾";
-      }
-
-      // 2. Правило 4 часов
-      if (lastFeedingEver) {
-        const hoursSinceLastMeal = (Date.now() - lastFeedingEver) / (1000 * 60 * 60);
-        if (hoursSinceLastMeal >= 4) {
-          shouldNotify = true;
-          message = `Оззи не ел уже ${Math.floor(hoursSinceLastMeal)}ч. Пора подкрепиться! 🥣`;
-        }
-      }
-
-      if (shouldNotify) {
-        sendNotification(message);
-        const newState = { ...state, lastReminderTimestamp: currentMinTimestamp };
-        setState(newState);
-        localStorage.setItem('kitten_state_bot', JSON.stringify(newState));
-      }
-    };
-
-    const interval = setInterval(checkReminders, 60000); // Проверка каждую минуту
-    return () => clearInterval(interval);
-  }, [state.settings.remindersEnabled, consumedToday, dailyNorm, todayHistory.length, lastFeedingEver, state.lastReminderTimestamp]);
-
-  const sendNotification = (text: string) => {
-    if (!("Notification" in window)) return;
-    if (Notification.permission === "granted") {
-      new Notification("Оззи Трекер", { body: text, icon: "/favicon.ico" });
-      (window as any).Telegram?.WebApp?.HapticFeedback?.notificationOccurred('warning');
-    }
-  };
-
-  const toggleReminders = async () => {
-    if (!state.settings.remindersEnabled) {
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') {
-        alert("Пожалуйста, разрешите уведомления в настройках браузера.");
-        return;
-      }
-    }
-    const newState = { 
-      ...state, 
-      settings: { ...state.settings, remindersEnabled: !state.settings.remindersEnabled } 
-    };
-    updateStateAndSync(newState);
-  };
-
   const groupedHistory = useMemo(() => {
     const groups: Record<string, FeedingLog[]> = {};
     const sorted = [...state.history].sort((a, b) => b.timestamp - a.timestamp);
@@ -210,7 +137,7 @@ const App: React.FC = () => {
   const isHungry = useMemo(() => {
     if (!lastFeedingEver) return false;
     const hoursSinceLastMeal = (nowTick - lastFeedingEver) / (1000 * 60 * 60);
-    return hoursSinceLastMeal > 4; // Теперь ориентируемся на 4 часа согласно ТЗ
+    return hoursSinceLastMeal > 4;
   }, [lastFeedingEver, nowTick]);
 
   const checkHealth = async () => {
@@ -260,7 +187,7 @@ const App: React.FC = () => {
       }
       const remoteState = JSON.parse(text);
       if (remoteState) {
-        if (!remoteState.settings) remoteState.settings = { remindersEnabled: false };
+        if (!remoteState.settings) remoteState.settings = {};
         remoteState.history.sort((a: any, b: any) => b.timestamp - a.timestamp);
         setState(remoteState);
         localStorage.setItem('kitten_state_bot', JSON.stringify(remoteState));
@@ -422,23 +349,6 @@ const App: React.FC = () => {
   const remainingToday = Math.max(0, dailyNorm - consumedToday);
   const nextMealAmount = (remainingToday / Math.max(1, 4 - todayHistory.length)).toFixed(0);
 
-  // Расчет времени до следующего напоминания
-  const nextReminderText = useMemo(() => {
-    if (!state.settings.remindersEnabled || consumedToday >= dailyNorm) return null;
-    if (todayHistory.length === 0) {
-      const h = new Date().getHours();
-      if (h < 8) return "Завтрак в 08:00";
-    }
-    if (lastFeedingEver) {
-      const diff = 4 * 60 * 60 * 1000 - (Date.now() - lastFeedingEver);
-      if (diff <= 0) return "Пора кормить!";
-      const mins = Math.ceil(diff / 60000);
-      if (mins < 60) return `Еда через ${mins}м`;
-      return `Еда через ${Math.floor(mins / 60)}ч ${mins % 60}м`;
-    }
-    return null;
-  }, [state.settings.remindersEnabled, consumedToday, dailyNorm, todayHistory.length, lastFeedingEver, nowTick]);
-
   return (
     <div className="flex flex-col min-h-screen max-w-xl mx-auto pb-10">
       <div className="px-4 py-3 flex justify-between items-center bg-[var(--tg-theme-secondary-bg-color)]">
@@ -487,11 +397,6 @@ const App: React.FC = () => {
           <div className="flex flex-col">
             <span className="text-[var(--tg-theme-hint-color)] text-[10px] uppercase font-bold mb-1">Прогресс дня</span>
             <span className="text-xl font-black">{consumedToday.toFixed(0)}г <span className="text-xs text-[var(--tg-theme-hint-color)] font-normal">/ {dailyNorm.toFixed(0)}г</span></span>
-            {nextReminderText && (
-              <span className="text-[9px] font-bold text-blue-500 flex items-center gap-1 mt-0.5">
-                <Bell size={8} /> {nextReminderText}
-              </span>
-            )}
           </div>
           <div className="flex flex-col items-end">
             <span className="text-[var(--tg-theme-hint-color)] text-[10px] uppercase font-bold mb-1">
@@ -648,19 +553,6 @@ const App: React.FC = () => {
           <div className="relative bg-[var(--tg-theme-bg-color)] rounded-t-[28px] p-8">
             <h2 className="text-2xl font-black mb-6">Настройки</h2>
             <div className="space-y-4 mb-8">
-              <button 
-                onClick={toggleReminders}
-                className={`w-full p-4 rounded-2xl flex items-center justify-between transition-colors ${state.settings.remindersEnabled ? 'bg-blue-50 text-blue-700 border border-blue-100' : 'bg-[var(--tg-theme-secondary-bg-color)] text-[var(--tg-theme-hint-color)]'}`}
-              >
-                <div className="flex items-center gap-3 font-bold">
-                  {state.settings.remindersEnabled ? <Bell size={20} /> : <BellOff size={20} />}
-                  <span>Уведомления-напоминания</span>
-                </div>
-                <div className={`w-10 h-6 rounded-full relative transition-colors ${state.settings.remindersEnabled ? 'bg-blue-500' : 'bg-slate-300'}`}>
-                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${state.settings.remindersEnabled ? 'right-1' : 'left-1'}`} />
-                </div>
-              </button>
-
               <div className="p-4 rounded-2xl bg-[var(--tg-theme-secondary-bg-color)] flex items-center gap-4">
                 <CheckCircle2 size={24} className={dbConnected ? 'text-green-500' : 'text-red-500'} /> 
                 <span className="font-bold">База данных {dbConnected ? 'онлайн' : 'оффлайн'}</span>

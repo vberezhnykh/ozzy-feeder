@@ -14,7 +14,7 @@ export interface FeedingLog {
 }
 
 export interface KittenSettings {
-  remindersEnabled: boolean;
+  // Пока пусто, задел на будущее
 }
 
 export interface KittenState {
@@ -23,7 +23,6 @@ export interface KittenState {
   lastWeightDate: string; // ISO string
   history: FeedingLog[];
   settings: KittenSettings;
-  lastReminderTimestamp?: number;
 }
 
 export interface FeedingNorm {
