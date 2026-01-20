@@ -6,6 +6,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { MongoClient, ServerApiVersion } from 'mongodb';
 import { GoogleGenAI } from "@google/genai";
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,7 +27,7 @@ async function connectDB() {
     console.warn("⚠️ MONGODB_URI not found in Environment Variables.");
     return;
   }
-  
+
   try {
     const client = new MongoClient(uri, {
       serverApi: {
@@ -33,11 +36,11 @@ async function connectDB() {
         deprecationErrors: true,
       }
     });
-    
+
     await client.connect();
     const db = client.db('ozzy_tracker');
     statesCollection = db.collection('family_states');
-    
+
     await db.command({ ping: 1 });
     isConnected = true;
     console.log("✅ Successfully connected to MongoDB Atlas");
@@ -52,7 +55,7 @@ connectDB();
 // --- СТАБИЛЬНЫЙ МЕХАНИЗМ KEEP-ALIVE ---
 const startKeepAlive = () => {
   const url = process.env.RENDER_EXTERNAL_URL || (process.env.RENDER_EXTERNAL_HOSTNAME ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}.onrender.com` : null);
-  
+
   if (!url) {
     console.warn("[Keep-Alive] No external URL found for pinging.");
     return;
@@ -60,10 +63,10 @@ const startKeepAlive = () => {
 
   const healthUrl = `${url.replace(/\/$/, '')}/api/health`;
   console.log(`[Keep-Alive] Service scheduled for: ${healthUrl}`);
-  
+
   setTimeout(() => {
     console.log("[Keep-Alive] Initializing periodic pings...");
-    
+
     setInterval(async () => {
       try {
         const res = await fetch(healthUrl);
@@ -75,7 +78,7 @@ const startKeepAlive = () => {
       } catch (err) {
         console.log(`[Keep-Alive] Network skip (likely internal Render routing): ${err.message}`);
       }
-    }, 4 * 60 * 1000); 
+    }, 4 * 60 * 1000);
   }, 30000);
 };
 
@@ -85,7 +88,7 @@ app.use(cors());
 app.use(bodyParser.json());
 
 app.get('/api/health', (req, res) => {
-  res.json({ 
+  res.json({
     dbConnected: isConnected,
     timestamp: new Date().toISOString(),
     status: "awake"
@@ -94,7 +97,7 @@ app.get('/api/health', (req, res) => {
 
 app.post('/api/ai-advice', async (req, res) => {
   const { weight, age, consumed, norm, currentTime, mealsCount } = req.body;
-  
+
   if (!process.env.API_KEY) {
     return res.json({ advice: "Добавьте API_KEY в Render Settings." });
   }
@@ -128,7 +131,7 @@ const memoryDb = {};
 
 app.get('/api/state/:familyId', async (req, res) => {
   const { familyId } = req.params;
-  
+
   if (statesCollection && isConnected) {
     try {
       const doc = await statesCollection.findOne({ _id: familyId });
@@ -138,7 +141,7 @@ app.get('/api/state/:familyId', async (req, res) => {
       return res.json(memoryDb[familyId] || null);
     }
   }
-  
+
   return res.json(memoryDb[familyId] || null);
 });
 
