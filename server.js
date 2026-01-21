@@ -54,29 +54,39 @@ connectDB();
 
 // --- СТАБИЛЬНЫЙ МЕХАНИЗМ KEEP-ALIVE ---
 const startKeepAlive = () => {
-  const url = process.env.RENDER_EXTERNAL_URL || (process.env.RENDER_EXTERNAL_HOSTNAME ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}.onrender.com` : null);
+  // Пытаемся определить URL сервиса (для Render или Railway)
+  const url = process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : (process.env.RENDER_EXTERNAL_URL || (process.env.RENDER_EXTERNAL_HOSTNAME ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}.onrender.com` : null));
 
   if (!url) {
-    console.warn("[Keep-Alive] No external URL found for pinging.");
+    // В логи пишем только если мы на Render (чтобы не спамить в Railway, где это не всегда нужно)
+    if (process.env.RENDER) {
+      console.warn("[Keep-Alive] No external URL found for pinging.");
+    }
     return;
   }
 
   const healthUrl = `${url.replace(/\/$/, '')}/api/health`;
-  console.log(`[Keep-Alive] Service scheduled for: ${healthUrl}`);
+  console.log(`[Keep-Alive] Heartbeat scheduled for: ${healthUrl}`);
 
   setTimeout(() => {
-    console.log("[Keep-Alive] Initializing periodic pings...");
+    console.log("[Keep-Alive] Starting periodic pings...");
 
     setInterval(async () => {
       try {
         const res = await fetch(healthUrl);
         if (res.ok) {
-          console.log(`[Keep-Alive] Heartbeat OK at ${new Date().toLocaleTimeString()}`);
+          // Логируем раз в час, чтобы не забивать логи Railway
+          const now = new Date();
+          if (now.getMinutes() < 5) {
+            console.log(`[Keep-Alive] Heartbeat OK at ${now.toLocaleTimeString()}`);
+          }
         } else {
           console.warn(`[Keep-Alive] Heartbeat status: ${res.status}`);
         }
       } catch (err) {
-        console.log(`[Keep-Alive] Network skip (likely internal Render routing): ${err.message}`);
+        console.log(`[Keep-Alive] Network skip: ${err.message}`);
       }
     }, 4 * 60 * 1000);
   }, 30000);
@@ -88,10 +98,14 @@ app.use(cors());
 app.use(bodyParser.json());
 
 app.get('/api/health', (req, res) => {
+  if (req.query.verbose) {
+    console.log(`[Health] Check received at ${new Date().toLocaleTimeString()}`);
+  }
   res.json({
     dbConnected: isConnected,
     timestamp: new Date().toISOString(),
-    status: "awake"
+    status: "awake",
+    platform: process.env.RAILWAY_PUBLIC_DOMAIN ? 'railway' : (process.env.RENDER ? 'render' : 'unknown')
   });
 });
 
@@ -99,13 +113,15 @@ app.post('/api/ai-advice', async (req, res) => {
   const { weight, age, consumed, norm, currentTime, mealsCount } = req.body;
 
   if (!process.env.API_KEY) {
-    return res.json({ advice: "Добавьте API_KEY в Render Settings." });
+    return res.json({ advice: "Добавьте API_KEY в настройки." });
   }
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `
+      model: 'gemini-1.5-flash',
+      contents: [{
+        role: 'user', parts: [{
+          text: `
         ИНФОРМАЦИЯ:
         Котёнок: Оззи
         Возраст: ${age.toFixed(1)} мес
@@ -119,10 +135,12 @@ app.post('/api/ai-advice', async (req, res) => {
         ВАЖНО: Учитывай текущее время. Если сейчас день или вечер (например, 17:40), НЕ ГОВОРИ "не переживай о норме" — это глупо, так как котенок еще поест. 
         Если съел мало для данного времени, подбодри. Если съел много — предупреди. Если норма почти достигнута, похвали.
         Будь естественным, как член семьи.
-      `,
+      ` }]
+      }],
     });
-    res.json({ advice: response.text });
+    res.json({ advice: response.response.text() });
   } catch (error) {
+    console.error("AI Error:", error.message);
     res.json({ advice: "Оззи сегодня просто лапочка!" });
   }
 });
@@ -174,6 +192,6 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
   console.log(`🚀 Ozzy Tracker server active on port ${port}`);
 });

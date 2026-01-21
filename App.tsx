@@ -580,9 +580,9 @@ const App: React.FC = () => {
           <div className="relative bg-[var(--tg-theme-bg-color)] rounded-t-[28px] p-8 shadow-2xl">
             <h2 className="text-2xl font-black mb-8">Изменить время</h2>
             <div className="flex justify-center items-center gap-4 mb-10">
-              <input type="number" value={editHour} onChange={(e) => setEditHour(e.target.value.slice(0, 2))} className="w-20 text-center text-4xl font-black bg-[var(--tg-theme-secondary-bg-color)] rounded-2xl py-4 outline-none" min="0" max="23" />
+              <input type="number" inputMode="numeric" value={editHour} onChange={(e) => setEditHour(e.target.value.slice(0, 2))} className="w-20 text-center text-4xl font-black bg-[var(--tg-theme-secondary-bg-color)] rounded-2xl py-4 outline-none" min="0" max="23" />
               <span className="text-4xl font-black">:</span>
-              <input type="number" value={editMin} onChange={(e) => setEditMin(e.target.value.slice(0, 2))} className="w-20 text-center text-4xl font-black bg-[var(--tg-theme-secondary-bg-color)] rounded-2xl py-4 outline-none" min="0" max="59" />
+              <input type="number" inputMode="numeric" value={editMin} onChange={(e) => setEditMin(e.target.value.slice(0, 2))} className="w-20 text-center text-4xl font-black bg-[var(--tg-theme-secondary-bg-color)] rounded-2xl py-4 outline-none" min="0" max="59" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <button onClick={() => setEditingLog(null)} className="py-4 rounded-2xl font-bold bg-[var(--tg-theme-secondary-bg-color)]">ОТМЕНА</button>
@@ -604,7 +604,7 @@ const App: React.FC = () => {
             <div className="space-y-6">
               <div>
                 <p className="text-[10px] text-[var(--tg-theme-hint-color)] uppercase font-bold mb-2 ml-1">Вес (кг)</p>
-                <input type="number" step="0.01" value={newWeight} onChange={(e) => setNewWeight(e.target.value)} autoFocus className="w-full text-center text-5xl font-black bg-[var(--tg-theme-secondary-bg-color)] rounded-2xl py-6 outline-none" placeholder="0.00" />
+                <input type="number" inputMode="decimal" step="0.01" value={newWeight} onChange={(e) => setNewWeight(e.target.value)} autoFocus className="w-full text-center text-5xl font-black bg-[var(--tg-theme-secondary-bg-color)] rounded-2xl py-6 outline-none" placeholder="0.00" />
               </div>
 
               <div className="flex flex-col">
